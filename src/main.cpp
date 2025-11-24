@@ -223,8 +223,8 @@ unsigned char* Canny(unsigned char* buffer, int width, int height, int comps, fl
                         }
                     }
                 }
-                //at least 2 strong pixels in radius (including itself)
-                if(counter>1)
+                //at least 1 strong pixel in radius (including itself)
+                if(counter>0)
                 {
                     newVal=255;
                 }
