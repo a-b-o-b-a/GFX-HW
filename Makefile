@@ -2,8 +2,8 @@ workspaceFolder = .
 
 # Detect OS
 ifeq ($(OS),Windows_NT) # Windows
-    CPPFLAGS = g++ --std=c++17 -fdiagnostics-color=always -Wall -g -I${workspaceFolder}/include -I${workspaceFolder}/src
-    CFLAGS = gcc -std=c11 -Wall -g -I${workspaceFolder}/include -I${workspaceFolder}/src
+    CPPFLAGS = g++ -fopenmp --std=c++17 -fdiagnostics-color=always -Wall -g -I${workspaceFolder}/include -I${workspaceFolder}/src
+    CFLAGS = gcc -fopenmp -std=c11 -Wall -g -I${workspaceFolder}/include -I${workspaceFolder}/src
     CLIBS = -L${workspaceFolder}/lib/windows
     LDFLAGS = -lglfw3dll -lopengl32
     all: copy_lib_w copy_res_w build
@@ -11,7 +11,7 @@ else
     UNAME_S := $(shell uname -s)
     ifeq ($(UNAME_S), Darwin) # macOS
         CPPFLAGS = clang++ -std=c++17 -fcolor-diagnostics -fansi-escape-codes -Wall -g -I${workspaceFolder}/include -I${workspaceFolder}/src
-        CFLAGS = clang -std=c11 -Wall -g -I${workspaceFolder}/include -I${workspaceFolder}/src
+        CFLAGS = clang  -std=c11 -Wall -g -I${workspaceFolder}/include -I${workspaceFolder}/src
         CLIBS = -L${workspaceFolder}/lib/macOS ${workspaceFolder}/bin/libglfw.3.dylib
         LDFLAGS = -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo -framework CoreFoundation -Wno-deprecated -Wl,-rpath,.
         all: copy_lib_m copy_res_m build
