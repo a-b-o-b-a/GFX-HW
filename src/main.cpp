@@ -4,16 +4,18 @@
 #include <fstream>
 #include <iostream>
 #include <vector>
-
+#include <fftw3.h>
 #include <stb/stb_image.h>
 #include <stb/stb_image_write.h>
 
 using namespace std;
 using namespace glm;
 
-const int calcDepth = 20;
+int calcDepth = 20;
 constexpr float EPSILON = 1e-3f;
 const vec3 bgcolor = vec3(0,0,0);
+
+float checkerboardScale = 0.5f;
 struct Ray
 {
     vec3 origin;
@@ -45,11 +47,11 @@ struct RayCamera
     float aspect;
     Ray get_ray(float u, float v) const {
         
-        vec3 w = glm::normalize(direction);
-        vec3 u_cam = glm::normalize(glm::cross(w, up));
-        vec3 v_cam = glm::cross(u_cam, w);
+        vec3 w = normalize(direction);
+        vec3 u_cam = normalize(cross(w, up));
+        vec3 v_cam = cross(u_cam, w);
 
-        float theta = glm::radians(fov);
+        float theta = radians(fov);
         float h = tan(theta * 0.5f);
         float viewport_height = 2.0f * h;
         float viewport_width  = aspect * viewport_height;
@@ -202,7 +204,7 @@ struct Scene
 vec3 checkerboardColor(vec3 rgbColor, vec3 hitPoint)
 {
     // Checkerboard pattern
-    float scaleParameter = 0.5f;
+    float scaleParameter = checkerboardScale;
     float checkerboard = 0;
     if (hitPoint.x < 0)
         checkerboard += floor((0.5 - hitPoint.x) / scaleParameter);
@@ -683,6 +685,210 @@ int main(int argc, char* argv[])
         
 
     }
+    //fftw scene
+    //change checkerboard scale
+    checkerboardScale = 0.5f;
+    calcDepth = 20;
+    height = 2000;
+    width = 2000;
+    Scene scene;
+    RayCamera camera;
+    vector<vec3> framebuffer(height * width);
+    char filename[30];
+    snprintf(filename, sizeof(filename), "./input/ft.txt");
+    std::cout << "started rendering scene: ft" << endl;
+    FILE *file = fopen(filename, "r");
+    ProcessFile(file, scene, camera);
+    double *in = fftw_alloc_real(width * height);
+    fftw_complex *out = fftw_alloc_complex(width * (height / 2 + 1));
+    fftw_plan p;
+    std::cout << "allocated fftw stuff" << endl;
+#pragma omp parallel for collapse(2)
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+
+            float u = (x + 0.5f) / width;
+            float v = (y + 0.5f) / height;
+
+            Ray ray = camera.get_ray(u, v);
+            glm::vec3 color = raytrace(ray, 0, scene);
+
+            framebuffer[y * width + x] = color;
+            double gray = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
+            in[y * width + x] = gray;
+        }
+    }
+    std::cout << "executing plan " << endl;
+    p = fftw_plan_dft_r2c_2d(height, width, in, out, FFTW_ESTIMATE);
+    fftw_execute(p);
+    std::cout << "plan executed, calcutating max frequency " << endl;
+    //calculating max magnitude of FFT
+    double maxMag = 0.0;
+    vec2 loc;
+    for (int v = 0; v < height; v++) {
+        for (int u = 0; u < width / 2 + 1; u++) {
+            // Skip DC component (0,0)
+            if (u == 0 && v == 0) continue;
+            
+            fftw_complex& c = out[v * (width / 2 + 1) + u];
+            double mag = sqrt(c[0] * c[0] + c[1] * c[1]);
+            if(mag>maxMag)
+            {
+                maxMag = mag;
+                loc = vec2(u,v);
+            }
+            
+        }
+    }
+     FILE *ft = fopen("./output/ft.txt", "w");
+    std::cout << "Maximum FFT magnitude: " << maxMag << std::endl;
+    fprintf(ft, "Max magnitude: %f ",maxMag);
+    fprintf(ft, "located at: %f %f \n",loc.x, loc.y);
+    double threshold = maxMag * 0.01;
     
+    
+    double maxFreq = 0.0;
+    
+    int countAboveThreshold = 0;
+    //calculating the frequency (above 0.5 -> needs better sampling, below -> can reduce sampling)
+    for (int v = 0; v < height; v++) {
+        for (int u = 0; u < width / 2 + 1; u++) {
+            fftw_complex& c = out[v * (width / 2 + 1) + u];
+            double mag = sqrt(c[0] * c[0] + c[1] * c[1]);
+            
+            if (mag < threshold) continue;
+            
+            countAboveThreshold++;
+            
+            // Normalized frequency components
+            double fx = (double)u / width;
+            double fy = (v <= height / 2) ? (double)v / height 
+                                          : (double)(v - height) / height;
+            
+            // Radial frequency (Euclidean distance from DC)
+            double freq = sqrt(fx * fx + fy * fy);
+            
+            if (freq > maxFreq) {
+                maxFreq = freq;
+                loc = vec2(u,v);
+            }
+        }
+    }
+    
+
+   
+    fprintf(ft, "Frequencies above treshold: %d\n",countAboveThreshold);
+    fprintf(ft, "Max frequency: %f", maxFreq);
+    fprintf(ft, "located at: %f %f \n",loc.x, loc.y);
+
+    char outname[30];
+    snprintf(outname, sizeof(outname), "./output/ft.png");
+    std::cout << "finished rendering scene: ft" << endl;
+    write_png(outname, width, height, framebuffer);
+
+    //rerender using new data
+    width = (int)(maxFreq / 0.5f * width);
+    height = (int)(maxFreq / 0.5f * height);
+    vector<vec3> framebuffer_up(height * width);
+    
+
+    std::cout << "started rendering updated scene" << endl;
+
+
+    double *in2 = fftw_alloc_real(width * height);
+    fftw_complex *out2 = fftw_alloc_complex(width * (height / 2 + 1));
+    
+#pragma omp parallel for collapse(2)
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+
+            float u = (x + 0.5f) / width;
+            float v = (y + 0.5f) / height;
+
+            Ray ray = camera.get_ray(u, v);
+            glm::vec3 color = raytrace(ray, 0, scene);
+
+            framebuffer_up[y * width + x] = color;
+            double gray = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
+            in2[y * width + x] = gray;
+        }
+    }
+    
+    std::cout << "executing plan " << endl;
+    p = fftw_plan_dft_r2c_2d(height, width, in2, out2, FFTW_ESTIMATE);
+    fftw_execute(p);
+    std::cout << "plan executed, calcutating max frequency " << endl;
+    //calculating max magnitude of FFT
+    maxMag = 0.0;
+    
+    for (int v = 0; v < height; v++) {
+        for (int u = 0; u < width / 2 + 1; u++) {
+            // Skip DC component (0,0)
+            if (u == 0 && v == 0) continue;
+            
+            fftw_complex& c = out2[v * (width / 2 + 1) + u];
+            double mag = sqrt(c[0] * c[0] + c[1] * c[1]);
+            if(mag>maxMag)
+            {
+                maxMag = mag;
+                loc = vec2(u,v);
+            }
+            
+        }
+    }
+    fprintf(ft, "\n\nUPDATED FILE\n\n");
+    std::cout << "Maximum FFT magnitude: " << maxMag << std::endl;
+    fprintf(ft, "Max magnitude: %f ",maxMag);
+    fprintf(ft, "located at: %f %f \n",loc.x, loc.y);
+    threshold = maxMag * 0.01;
+    
+    
+    maxFreq = 0.0;
+    
+    countAboveThreshold = 0;
+    //calculating the frequency (above 0.5 -> needs better sampling, below -> can reduce sampling)
+    for (int v = 0; v < height; v++) {
+        for (int u = 0; u < width / 2 + 1; u++) {
+            fftw_complex& c = out2[v * (width / 2 + 1) + u];
+            double mag = sqrt(c[0] * c[0] + c[1] * c[1]);
+            
+            if (mag < threshold) continue;
+            
+            countAboveThreshold++;
+            
+            // Normalized frequency components
+            double fx = (double)u / width;
+            double fy = (v <= height / 2) ? (double)v / height 
+                                          : (double)(v - height) / height;
+            
+            // Radial frequency (Euclidean distance from DC)
+            double freq = sqrt(fx * fx + fy * fy);
+            
+            if (freq > maxFreq) {
+                maxFreq = freq;
+                loc = vec2(u,v);
+            }
+        }
+    }
+    fprintf(ft, "Frequencies above treshold: %d\n",countAboveThreshold);
+    fprintf(ft, "Max frequency: %f", maxFreq);
+    fprintf(ft, "located at: %f %f \n",loc.x, loc.y);
+
+    snprintf(outname, sizeof(outname), "./output/updated_ft.png");
+    std::cout << "finished rendering updated scene" << endl;
+    write_png(outname, width, height, framebuffer_up);
+    fclose(file);
+    fftw_destroy_plan(p);
+    fftw_free(in);
+    fftw_free(out);
+    fclose(file);
+    fclose(ft);
+   
+
+
     return 0;
 }

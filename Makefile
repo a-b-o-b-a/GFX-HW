@@ -2,10 +2,10 @@ workspaceFolder = .
 
 # Detect OS
 ifeq ($(OS),Windows_NT) # Windows
-    CPPFLAGS = g++ -fopenmp --std=c++17 -fdiagnostics-color=always -Wall -g -I${workspaceFolder}/include -I${workspaceFolder}/src
+    CPPFLAGS = g++ -fopenmp --std=c++17 -fdiagnostics-color=always -Wall -g -I${workspaceFolder}/include -I${workspaceFolder}/src 
     CFLAGS = gcc -fopenmp -std=c11 -Wall -g -I${workspaceFolder}/include -I${workspaceFolder}/src
-    CLIBS = -L${workspaceFolder}/lib/windows
-    LDFLAGS = -lglfw3dll -lopengl32
+    CLIBS = -L${workspaceFolder}/lib/windows  
+    LDFLAGS = -lglfw3dll -lopengl32 -lfftw3
     all: copy_lib_w copy_res_w build
 else
     UNAME_S := $(shell uname -s)

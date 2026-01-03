@@ -159,7 +159,6 @@ bool intersectPlane(inout Ray ray, inout HitInfo hit, in Plane plane)
         return true;
 }
 
-// replace void to your hit data type
 // used for shadow calculation
 bool intersectScene(inout Ray ray, float maxDist, inout HitInfo hit) 
 {
@@ -317,7 +316,7 @@ vec3 raytrace(inout Ray ray)
     }
     else if(hit.type==TYPE_REFLECTIVE)
     {
-        
+        lastRefracted = false;   
         vec3 R = reflect(ray.direction, hit.normal);
         vec3 offset = dot(ray.direction, hit.normal) > 0.0f ? -hit.normal * EPSILON : hit.normal * EPSILON;
         ray.origin = hit.hitPoint + offset;
@@ -357,18 +356,11 @@ vec3 raytrace(inout Ray ray)
             ray.direction = normalize(R) ;
             
         }
-        //some reflectance math??? for better result
-        // Calculate Fresnel reflectance using original angle
-        // float R0 = pow((n1 - n2) / (n1 + n2), 2.0);
-        // float reflectance = R0 + (1.0 - R0) * pow(1.0 - abs(cosI), 5.0);
-        result += localColor * 0.1f;
-        // reflectionPower *= reflectance;
+        
         lastRefracted=true;
-         // attenuate for next bounce
-        //float reflectance = 0.05 + 0.95 * pow(1.0 - cosI, 5.0); // Schlick approx
-        //result += reflectionPower * localColor * (1.0 - reflectance);
+        
     }
-    //change the ray values to reflected ones, then calculate again 
+    
     
     }
     
