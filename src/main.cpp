@@ -657,6 +657,7 @@ int main(int argc, char* argv[])
         Scene scene;
         RayCamera camera;
         vector<vec3> framebuffer(height*width);
+        
         char filename[30];
         snprintf(filename, sizeof(filename), "./input/scene%d1.txt", i);
         std::cout<<"started rendering scene: "<<i<<"_1"<<endl;
@@ -688,7 +689,7 @@ int main(int argc, char* argv[])
     //fftw scene
     //change checkerboard scale
     checkerboardScale = 0.5f;
-    calcDepth = 20;
+    calcDepth = 10;
     height = 2000;
     width = 2000;
     Scene scene;
@@ -721,14 +722,18 @@ int main(int argc, char* argv[])
         }
     }
     std::cout << "executing plan " << endl;
-    p = fftw_plan_dft_r2c_2d(height, width, in, out, FFTW_ESTIMATE);
+    p = fftw_plan_dft_r2c_2d(height, width, in, out, FFTW_ESTIMATE );
     fftw_execute(p);
     std::cout << "plan executed, calcutating max frequency " << endl;
+
+    
+
+
     //calculating max magnitude of FFT
     double maxMag = 0.0;
     vec2 loc;
-    for (int v = 0; v < height; v++) {
-        for (int u = 0; u < width / 2 + 1; u++) {
+    for (int v = 0; v < (height/2+1); v++) {
+        for (int u = 0; u < (width / 2 + 1); u++) {
             // Skip DC component (0,0)
             if (u == 0 && v == 0) continue;
             
@@ -742,19 +747,36 @@ int main(int argc, char* argv[])
             
         }
     }
+    //debug image
+    vector<vec3> debug(height * width);
+    for (int v = 0; v < height; v++) {
+        for (int u = 0; u < (width / 2 + 1); u++) {
+            
+            fftw_complex& c = out[v * (width / 2 + 1) + u];
+            double mag = sqrt(c[0] * c[0] + c[1] * c[1]);
+            double logMag = log(1.0 + mag);
+            double logMax = log(1.0 + maxMag);
+            float scaled =logMag/logMax;
+            debug[v * width + u] = vec3(scaled,scaled,scaled);
+            //debug[v * (width+1) -u] = vec3(scaled,scaled,scaled);
+        }
+    }
+    write_png("./output/FT_BEFORE.png", width, height, debug);
+
+
      FILE *ft = fopen("./output/ft.txt", "w");
     std::cout << "Maximum FFT magnitude: " << maxMag << std::endl;
     fprintf(ft, "Max magnitude: %f ",maxMag);
     fprintf(ft, "located at: %f %f \n",loc.x, loc.y);
     double threshold = maxMag * 0.01;
     
-    
+    vec2 loc2;
     double maxFreq = 0.0;
     
     int countAboveThreshold = 0;
     //calculating the frequency (above 0.5 -> needs better sampling, below -> can reduce sampling)
-    for (int v = 0; v < height; v++) {
-        for (int u = 0; u < width / 2 + 1; u++) {
+    for (int v = 0; v < (height/2+1); v++) {
+        for (int u = 0; u < (width / 2 + 1); u++) {
             fftw_complex& c = out[v * (width / 2 + 1) + u];
             double mag = sqrt(c[0] * c[0] + c[1] * c[1]);
             
@@ -772,7 +794,7 @@ int main(int argc, char* argv[])
             
             if (freq > maxFreq) {
                 maxFreq = freq;
-                loc = vec2(u,v);
+                loc2 = vec2(u,v);
             }
         }
     }
@@ -781,7 +803,7 @@ int main(int argc, char* argv[])
    
     fprintf(ft, "Frequencies above treshold: %d\n",countAboveThreshold);
     fprintf(ft, "Max frequency: %f", maxFreq);
-    fprintf(ft, "located at: %f %f \n",loc.x, loc.y);
+    fprintf(ft, "located at: %f %f \n",loc2.x, loc2.y);
 
     char outname[30];
     snprintf(outname, sizeof(outname), "./output/ft.png");
@@ -789,8 +811,19 @@ int main(int argc, char* argv[])
     write_png(outname, width, height, framebuffer);
 
     //rerender using new data
-    width = (int)(maxFreq / 0.5f * width);
-    height = (int)(maxFreq / 0.5f * height);
+    
+    int dim = round(glm::max(loc.x,loc.y)*2);//nyquist - needed 2x samples
+
+    if (dim>=5)
+    {
+        width = dim;
+        height = dim;
+    }
+    else
+    {
+        width = (int)(maxFreq / 0.5f * width);
+        height = (int)(maxFreq / 0.5f * height);
+    }
     vector<vec3> framebuffer_up(height * width);
     
 
@@ -825,8 +858,8 @@ int main(int argc, char* argv[])
     //calculating max magnitude of FFT
     maxMag = 0.0;
     
-    for (int v = 0; v < height; v++) {
-        for (int u = 0; u < width / 2 + 1; u++) {
+    for (int v = 0; v < (height/2+1); v++) {
+        for (int u = 0; u < (width / 2 + 1); u++) {
             // Skip DC component (0,0)
             if (u == 0 && v == 0) continue;
             
@@ -840,6 +873,22 @@ int main(int argc, char* argv[])
             
         }
     }
+
+    //debug image
+    vector<vec3> debug2(height * width);
+    for (int v = 0; v < height; v++) {
+        for (int u = 0; u < (width / 2 + 1); u++) {
+            // Skip DC component (0,0)
+            fftw_complex& c = out2[v * (width / 2 + 1) + u];
+            double mag = sqrt(c[0] * c[0] + c[1] * c[1]);
+            double logMag = log(1.0 + mag);
+            double logMax = log(1.0 + maxMag);
+            float scaled =logMag/logMax;
+            debug2[v * width + u] = vec3(scaled,scaled,scaled);
+            //debug2[v * (width+1) -u] = vec3(scaled,scaled,scaled);
+        }
+    }
+    write_png("./output/FT_AFTER.png", width, height, debug2);
     fprintf(ft, "\n\nUPDATED FILE\n\n");
     std::cout << "Maximum FFT magnitude: " << maxMag << std::endl;
     fprintf(ft, "Max magnitude: %f ",maxMag);
@@ -851,8 +900,8 @@ int main(int argc, char* argv[])
     
     countAboveThreshold = 0;
     //calculating the frequency (above 0.5 -> needs better sampling, below -> can reduce sampling)
-    for (int v = 0; v < height; v++) {
-        for (int u = 0; u < width / 2 + 1; u++) {
+    for (int v = 0; v < (height/2+1); v++) {
+        for (int u = 0; u < (width / 2 + 1); u++) {
             fftw_complex& c = out2[v * (width / 2 + 1) + u];
             double mag = sqrt(c[0] * c[0] + c[1] * c[1]);
             
@@ -870,13 +919,13 @@ int main(int argc, char* argv[])
             
             if (freq > maxFreq) {
                 maxFreq = freq;
-                loc = vec2(u,v);
+                loc2 = vec2(u,v);
             }
         }
     }
     fprintf(ft, "Frequencies above treshold: %d\n",countAboveThreshold);
     fprintf(ft, "Max frequency: %f", maxFreq);
-    fprintf(ft, "located at: %f %f \n",loc.x, loc.y);
+    fprintf(ft, "located at: %f %f \n",loc2.x, loc2.y);
 
     snprintf(outname, sizeof(outname), "./output/updated_ft.png");
     std::cout << "finished rendering updated scene" << endl;
