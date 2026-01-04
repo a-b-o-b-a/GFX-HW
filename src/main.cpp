@@ -814,7 +814,7 @@ int main(int argc, char* argv[])
     
     int dim = round(glm::max(loc.x,loc.y)*2);//nyquist - needed 2x samples
 
-    if (dim>=5)
+    if (loc.x == loc.y)
     {
         width = dim;
         height = dim;
@@ -824,6 +824,7 @@ int main(int argc, char* argv[])
         width = (int)(maxFreq / 0.5f * width);
         height = (int)(maxFreq / 0.5f * height);
     }
+
     vector<vec3> framebuffer_up(height * width);
     
 
