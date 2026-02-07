@@ -21,7 +21,7 @@ struct Cube
 };
 class Camera
 {
-    private:
+    public:
         // View and Projection
         glm::mat4 m_View = glm::mat4(1.0f);
         glm::mat4 m_Projection = glm::mat4(1.0f);
@@ -42,8 +42,8 @@ class Camera
         float m_Right = 1.0f;
         float m_Bottom = -1.0f; 
         float m_Top = 1.0f;
-    public:
-  
+    
+        float m_dist = 6.0f;
         // Prevent the camera from jumping around when first clicking left click
         std::vector<Cube> cubes;
         double m_OldMouseX = 0.0;
@@ -61,6 +61,7 @@ class Camera
         void SetOrthographic(float near, float far);
         void SetPerspective(float near, float far);
         void SetPosition(glm::vec3 pos);
+        glm::vec3 GetPosition();
         // Handle camera inputs
         void EnableInputs(GLFWwindow* window);
 

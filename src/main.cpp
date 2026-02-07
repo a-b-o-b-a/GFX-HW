@@ -21,7 +21,7 @@ const unsigned int width = 1200;
 const unsigned int height = 1200;
 // const float FOVdegree = 45.0f;  // Field Of View Angle
 const float near = 0.1f;
-const float far = 100.0f;
+const float far = 200.0f;
 
 float vertices[8*4*6] = {
     // positions            // colors            // texCoords
@@ -145,7 +145,7 @@ int main(int argc, char* argv[])
         /* Create camera */
         Camera camera(width, height);
         //camera.SetOrthographic(near, far);
-        camera.SetPosition(vec3(0,0,6));
+        camera.SetPosition(vec3(0,0,camera.m_dist));
         camera.SetPerspective(near,far);
         //vector<Cube> cubes;
         for (int x = -1; x <= 1; x++)
@@ -181,17 +181,17 @@ int main(int argc, char* argv[])
 
             
            
-            static float lastTime = 0.0f;
-            float currentTime = glfwGetTime();
-            float deltaTime = currentTime - lastTime;
-            lastTime = currentTime;
-            angle += deltaTime * glm::radians(60.0f); // 60° per second
+            // static float lastTime = 0.0f;
+            // float currentTime = glfwGetTime();
+            // float deltaTime = currentTime - lastTime;
+            // lastTime = currentTime;
+            // angle += deltaTime * glm::radians(60.0f); // 60° per second
             
-            mat4 rot2 = glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0.0f, 1.0f, 0.0f));
-            rot2 = glm::rotate(rot2, angle*0.3f, glm::vec3(1.0f, 0.0f, 0.0f));
+            // mat4 rot2 = glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0.0f, 1.0f, 0.0f));
+            // rot2 = glm::rotate(rot2, angle*0.3f, glm::vec3(1.0f, 0.0f, 0.0f));
             /* Initialize the MVP matrices */ 
             
-            glm::mat4 model = rot2*cube.rot* trans * rot * scl;
+            glm::mat4 model = cube.rot* trans * rot * scl;
             glm::mat4 view = camera.GetViewMatrix();
             glm::mat4 proj = camera.GetProjectionMatrix();
           

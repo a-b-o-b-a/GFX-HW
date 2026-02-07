@@ -22,6 +22,10 @@ void Camera::SetPosition(glm::vec3 pos)
 {
     m_Position = pos;
 }
+glm::vec3 Camera::GetPosition()
+{
+    return m_Position;
+}
 /////////////////////
 // Input Callbacks //
 /////////////////////
@@ -225,14 +229,38 @@ void CursorPosCallback(GLFWwindow* window, double currMouseX, double currMouseY)
     camera->m_NewMouseY = camera->m_OldMouseY - currMouseY;
     camera->m_OldMouseX = currMouseX;
     camera->m_OldMouseY = currMouseY;
-
+    float rotationspeed = 0.01f;
+    float movespeed = 0.01f;
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
     {
         std::cout << "MOUSE LEFT Motion" << std::endl;
+        
+        
+        float angleY = camera->m_NewMouseX * rotationspeed;
+        mat4 rotY = rotate(mat4(1.0f), angleY, vec3(0.0f, 1.0f, 0.0f));
+
+        
+        vec3 right = normalize(cross(camera->m_Orientation, camera->m_Up));
+        float angleX = camera->m_NewMouseY * rotationspeed;
+        mat4 rotX = rotate(mat4(1.0f), angleX, right);
+
+        vec4 newPos = rotY * rotX * vec4(camera->m_Position, 1.0f);
+        camera->m_Position = vec3(newPos);
+        
+        camera->m_Orientation = normalize(-camera->m_Position);
+        
+        camera->m_View = lookAt(camera->m_Position, camera->m_Position + camera->m_Orientation, camera->m_Up);
     }
     else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS)
     {
         std::cout << "MOUSE RIGHT Motion" << std::endl;
+
+        vec3 right = normalize(cross(camera->m_Orientation, camera->m_Up));
+        vec3 up = normalize(cross(right, camera->m_Orientation));
+
+        camera->m_Position += right * float(camera->m_NewMouseX * movespeed);
+        camera->m_Position += up * float(-camera->m_NewMouseY * movespeed);
+        camera->m_View = lookAt(camera->m_Position, camera->m_Position + camera->m_Orientation, camera->m_Up);
     }
 }
 
@@ -243,7 +271,13 @@ void ScrollCallback(GLFWwindow* window, double scrollOffsetX, double scrollOffse
         std::cout << "Warning: Camera wasn't set as the Window User Pointer! ScrollCallback is skipped" << std::endl;
         return;
     }
+    float speed = 0.2f;
+    float distance = glm::length(camera->m_Position);
+    float newDistance =  distance * (1.0-speed*scrollOffsetY);
+    newDistance = glm::clamp(newDistance,5.0f, 100.0f);
 
+    camera->m_Position = glm::normalize(camera->m_Position) * newDistance;
+    camera->m_View = glm::lookAt(camera->m_Position, camera->m_Position + camera->m_Orientation, camera->m_Up);
     std::cout << "SCROLL Motion" << std::endl;
 }
 
