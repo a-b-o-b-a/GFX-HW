@@ -1,944 +1,221 @@
-
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
+#include <Debugger.h>
+#include <VertexBuffer.h>
+#include <VertexBufferLayout.h>
+#include <IndexBuffer.h>
+#include <VertexArray.h>
+#include <Shader.h>
+#include <Texture.h>
 #include <Camera.h>
-#include <fstream>
+
 #include <iostream>
 #include <vector>
-#include <fftw3.h>
-#include <stb/stb_image.h>
-#include <stb/stb_image_write.h>
-
-using namespace std;
 using namespace glm;
+using namespace std;
+/* Window size */
+const unsigned int width = 1200;
+const unsigned int height = 1200;
+// const float FOVdegree = 45.0f;  // Field Of View Angle
+const float near = 0.1f;
+const float far = 100.0f;
 
-int calcDepth = 20;
-constexpr float EPSILON = 1e-3f;
-const vec3 bgcolor = vec3(0,0,0);
+float vertices[8*4*6] = {
+    // positions            // colors            // texCoords
+    // FRONT (+Z)
+    -0.5f,-0.5f, 0.5f,    0,1,0,   0,0,
+     0.5f,-0.5f, 0.5f,    0,1,0,   1,0,
+     0.5f, 0.5f, 0.5f,    0,1,0,   1,1,
+    -0.5f, 0.5f, 0.5f,    0,1,0,   0,1,
 
-float checkerboardScale = 0.5f;
-struct Ray
-{
-    vec3 origin;
-    vec3 direction;
-    vec3 at(float t) const
-    {
-        return origin + t*direction;
-    }
+    // BACK (-Z)
+     0.5f,-0.5f,-0.5f,    0,0,1,   0,0,
+    -0.5f,-0.5f,-0.5f,    0,0,1,   1,0,
+    -0.5f, 0.5f,-0.5f,    0,0,1,   1,1,
+     0.5f, 0.5f,-0.5f,    0,0,1,   0,1,
+
+    // LEFT (-X)
+    -0.5f,-0.5f,-0.5f,    1,0.65,0,   0,0,
+    -0.5f,-0.5f, 0.5f,    1,0.65,0,   1,0,
+    -0.5f, 0.5f, 0.5f,    1,0.65,0,   1,1,
+    -0.5f, 0.5f,-0.5f,    1,0.65,0,   0,1,
+
+    // RIGHT (+X)
+     0.5f,-0.5f, 0.5f,    1,0,0,   0,0,
+     0.5f,-0.5f,-0.5f,    1,0,0,   1,0,
+     0.5f, 0.5f,-0.5f,    1,0,0,   1,1,
+     0.5f, 0.5f, 0.5f,    1,0,0,   0,1,
+
+    // TOP (+Y)
+    -0.5f, 0.5f, 0.5f,    1,1,1,   0,0,
+     0.5f, 0.5f, 0.5f,    1,1,1,   1,0,
+     0.5f, 0.5f,-0.5f,    1,1,1,   1,1,
+    -0.5f, 0.5f,-0.5f,    1,1,1,   0,1,
+
+    // BOTTOM (-Y)
+    -0.5f,-0.5f,-0.5f,    1,1,0,   0,0,
+     0.5f,-0.5f,-0.5f,    1,1,0,   1,0,
+     0.5f,-0.5f, 0.5f,    1,1,0,   1,1,
+    -0.5f,-0.5f, 0.5f,    1,1,0,   0,1
 };
-
-struct Material 
-{
-    vec3 ambient;
-    vec3 diffuse;
-    vec3 specular;
-    float shine;
-    float alpha;
-    float reflective = 0.0;   
+unsigned int indices[6*6] = {
+    0, 1, 2,   2, 3, 0,       // front
+    4, 5, 6,   6, 7, 4,       // back
+    8, 9,10,  10,11, 8,       // left
+   12,13,14,  14,15,12,       // right
+   16,17,18,  18,19,16,       // top
+   20,21,22,  22,23,20        // bottom
 };
-
-struct RayCamera
-{
-    vec3 pos;
-    vec3 up;
-    vec3 direction;
-    //default fov
-    float fov = 70;
-    //aspect = width/height, in this case 1
-    float aspect;
-    Ray get_ray(float u, float v) const {
-        
-        vec3 w = normalize(direction);
-        vec3 u_cam = normalize(cross(w, up));
-        vec3 v_cam = cross(u_cam, w);
-
-        float theta = radians(fov);
-        float h = tan(theta * 0.5f);
-        float viewport_height = 2.0f * h;
-        float viewport_width  = aspect * viewport_height;
-
-        vec3 horizontal = viewport_width * u_cam;
-        vec3 vertical   = viewport_height * v_cam;
-
-        vec3 lower_left = pos + w - horizontal * 0.5f - vertical * 0.5f;
-
-        vec3 pixel = lower_left + u * horizontal + v * vertical;
-
-        return {
-            pos,
-            normalize(pixel - pos)
-        };
-    }
-};
-
-struct GlobalLight 
-{
-    vec3 color;
-    float intensity;
-};
-
-struct Light{
-    virtual ~Light() {}
-    vec3 color;
-    float intensity;
-    vec3 direction;
-};
-struct DirectionalLight : public Light
-{
-    
-};
-
-struct SpotLight : public Light
-{  
-    vec3 position; 
-    float cutoff;     
-};
-
-struct Hit {
-    float t;
-    vec3 point;
-    vec3 normal;
-    //pointer to material of hit object
-    Material* material;
-
-    bool isPlane = false;
-};
-struct SceneObject{
-    virtual ~SceneObject(){}
-    Material material;
-};
-struct Sphere : public SceneObject
-{
-    vec3 center;
-    float radius;
-    
-    bool intersect (const Ray& ray, Hit& hit) const
-    {
-        vec3 rel = ray.origin-center;
-        float a = dot(ray.direction, ray.direction);
-        float b = 2.0f * dot(rel, ray.direction);
-        float c = dot(rel, rel) - radius * radius;
-        //find solution to quadratic equation
-        float disc = b*b - 4*a*c;
-        if (disc < 0) return false;
-        //calculate both ts
-        float t0 = (-b - sqrt(disc)) / (2*a);
-        float t1 = (-b + sqrt(disc)) / (2*a);
-        
-        float t = -1.0f;
-        // pick the closest positive t
-        if (t0 > EPSILON) t = t0;
-        else if (t1 > EPSILON) t = t1;
-        else return false;
-        //if actually hit, return the exact point to hit
-        hit.t = t;
-        hit.point = ray.at(t);
-        hit.normal = normalize(hit.point - center);
-        hit.material = (Material*)&material;
-        return true;
-    }
-};
-
-struct Plane: public SceneObject
-{
-    vec3 position;
-    vec3 normal;
-    
-    bool intersect(const Ray& ray, Hit& hit) const {
-        float denom  = dot(normal, ray.direction);
-        if (fabs(denom) < 1e-4) return false;
-
-        float t = dot(position - ray.origin, normal) / denom;
-        if (t <= 1e-3f) return false;  
-
-    
-
-        hit.t = t;
-        hit.point = ray.at(t);
-        //make sure the hit normal is pointing towards the light source, not at the same direction as the ray!
-        if (dot(ray.direction, normal) < 0)
-        {
-             hit.normal = normalize(normal);
-        }
-        else
-        {
-            hit.normal = normalize(-normal);
-        }
-        hit.material = (Material*)&material;
-        return true;
-    }
-};
-
-struct Scene
-{
-    vector<Sphere> spheres;
-    vector<Plane> planes;
-    GlobalLight ambient;
-    vector<SpotLight> spots;
-    vector<DirectionalLight> dirLights;
-    //check for any intersection below maxDist (where maxDist is distance to light source)
-    bool intersect(const Ray& ray, float maxDist, Hit& hit) const {
-    bool anyHit = false;
-    constexpr float MIN_T = 1e-4f;
-    hit.t = maxDist;
-    for (const auto& sphere : spheres) {
-        Hit temp;
-        temp.t = 1e30f;
-        if (sphere.intersect(ray, temp) && temp.t < maxDist && temp.t>MIN_T) {
-            hit = temp;
-            anyHit = true;
-        }
-    }
-    for (const auto& plane : planes) {
-        Hit temp;
-        temp.t = 1e30f;
-        if (plane.intersect(ray, temp) && temp.t < maxDist && temp.t>MIN_T) {
-            hit = temp;
-            anyHit = true;
-        }
-    }
-    return anyHit;
-}
-};
+/* Shape vertices coordinates with positions, colors, and corrected texCoords */
 
 
-vec3 checkerboardColor(vec3 rgbColor, vec3 hitPoint)
-{
-    // Checkerboard pattern
-    float scaleParameter = checkerboardScale;
-    float checkerboard = 0;
-    if (hitPoint.x < 0)
-        checkerboard += floor((0.5 - hitPoint.x) / scaleParameter);
-    else
-    {
-        checkerboard += floor(hitPoint.x / scaleParameter);
-    }
-    if (hitPoint.y < 0)
-    {
-        checkerboard += floor((0.5 - hitPoint.y) / scaleParameter);
-    }
-    else
-    {
-        checkerboard += floor(hitPoint.y / scaleParameter);
-    }
-    checkerboard = (checkerboard * 0.5) - int(checkerboard * 0.5);
-    checkerboard *= 2;
-    if (checkerboard > 0.5)
-    {
-        return 0.5f * rgbColor;
-    }
-    return rgbColor;
-}
-
-
-
-vec3 phong(
-    const Hit& hit,
-    const vec3& viewDirection,
-    const Scene& scene)
-{
-    vec3 color =scene.ambient.intensity * scene.ambient.color * hit.material->ambient;
-    
-    //directional lights
-    for (const auto& light : scene.dirLights) {
-
-        vec3 L = normalize(-light.direction);
-        Ray shadowRay;
-        Hit tempHit;
-        shadowRay.origin = hit.point+ (hit.normal)*EPSILON;
-        shadowRay.direction = L;
-        if (!scene.intersect(shadowRay, 1e30f,tempHit)) {
-        float diff = glm::max(dot(hit.normal, L), 0.0f);
-
-        vec3 R = glm::reflect(-L, hit.normal);
-        float spec = pow(glm::max(dot(viewDirection, R), 0.0f), hit.material->shine);
-        spec = glm::min(spec, 1.0f);
-        
-        color += light.intensity * 
-            (hit.material->diffuse * diff +
-            hit.material->specular * spec)
-             * light.color;
-        }
-    }
-
-    //spot lights
-    for (const auto& light : scene.spots) {
-        vec3 L = normalize(light.position - hit.point);
-        
-        Ray shadowRay;
-        Hit tempHit;
-        //offset to not hit the object itself
-        shadowRay.origin = hit.point+ (hit.normal)*EPSILON;
-        shadowRay.direction = L;
-
-        float theta = dot(L, normalize(-light.direction));
-        if ((theta > light.cutoff) && !scene.intersect(shadowRay, length(light.position - hit.point) -EPSILON,tempHit)) {
-            float diff = glm::max(dot(hit.normal, L), 0.0f);
-            vec3 R = reflect(-L, hit.normal);
-            float spec = pow(glm::max(dot(viewDirection, R), 0.0f), hit.material->shine);
-            //CLAMP SPECULAR! prevents insane levels of white close to camera on spots
-            spec = glm::min(spec, 1.0f);
-            
-            color += light.intensity * 
-            (hit.material->diffuse * diff +
-            hit.material->specular * spec)
-            * light.color;
-        }
-    }
-    if(hit.isPlane)
-    {
-        color = checkerboardColor(color,hit.point);
-    }
-    return clamp(color, 0.0f, 1.0f);
-}
-
-
-vec3 raytrace(const Ray& ray, int depth, const Scene& scene) {
-    Hit closest;
-    Hit tmp;
-    closest.t = 1e30f;
-    tmp.t = 1e30f;
-    bool hitSomething = false;
-
-    for (const auto& s : scene.spheres)
-        if (s.intersect(ray, tmp) && tmp.t < closest.t)
-            {
-            closest = tmp;
-            hitSomething = true;
-            closest.isPlane = false;
-        };
-
-    for (const auto& p : scene.planes)
-        if (p.intersect(ray, tmp) && tmp.t < closest.t)
-        {
-            closest = tmp;
-            hitSomething = true;
-            closest.isPlane = true;
-        };
-    
-
-    if (!hitSomething)
-        // black background
-        return bgcolor;
-    
-    Hit hit = closest;
-    vec3 viewDir = normalize(-ray.direction);
-    vec3 localColor = phong(hit, viewDir, scene);
-    vec3 result = localColor;
-    if (hit.material->reflective>0 && depth < calcDepth )
-    {
-        vec3 R = reflect(ray.direction, hit.normal);
-        //supposed to make sure the normal is pointing at the right direction for planes
-        vec3 offset = dot(ray.direction, hit.normal) > 0
-              ? -hit.normal * EPSILON
-              : hit.normal * EPSILON;
-
-        // //reflection glitch fix??
-        //  // Adaptive offset for reflections
-        // float cosTheta = abs(dot(hit.normal, R));
-        // float reflectionBias = 1e-3f / glm::max(cosTheta, 0.1f);
-        Ray reflected {
-            hit.point + offset, 
-            normalize(R)
-        };
-
-        vec3 reflectedColor = raytrace(reflected, depth + 1, scene);
-
-        result = mix(result, reflectedColor, glm::min(hit.material->reflective,1.0f));
-    }
-    if (1.0-hit.material->alpha > 0 && depth < calcDepth) {
-        //implement Snell's law
-        float n1 = 1.0f;               
-        float n2 = 1.5f;
-        vec3 N = hit.normal;
-        vec3 I = normalize(ray.direction);
-        float cosI = dot(-I, N);
-        float eta = n1 / n2;
-
-        //flip normal if inside
-        if (cosI < 0) {
-            cosI = -cosI;
-            N = -N;
-            eta = n2 / n1;
-        }
-
-        float k = 1.0f - eta*eta*(1.0f - cosI*cosI);
-        if (k >= 0.0f) 
-        {
-            vec3 T = eta * I + (eta * cosI - sqrt(k)) * N;
-            Ray refracted { hit.point - N * EPSILON, normalize(T) };
-            vec3 refractedColor = raytrace(refracted, depth + 1, scene);
-            
-            result = mix(result, refractedColor, 1-hit.material->alpha);
-        } 
-        else 
-        {
-            //internal reflection
-            vec3 R = reflect(I, N);
-            Ray reflected { hit.point + N * EPSILON, normalize(R) };
-            vec3 reflectedColor = raytrace(reflected, depth + 1, scene);
-            result = mix(result, reflectedColor, 1.0 - hit.material->alpha);
-        }
-       
-    }
-
-    return result;
-    
-}
-
-
-void write_png(const char* filename, int width, int height, const std::vector<vec3>& framebuffer)
-{
-    std::vector<uint8_t> pixels(width * height * 3);
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            vec3 c = framebuffer[y * width + x];
-            int fy = height - 1 - y;
-            int idx = 3 * (fy * width + x);
-
-            pixels[idx+0] = (uint8_t)(255 * clamp(c.r, 0.0f, 1.0f));
-            pixels[idx+1] = (uint8_t)(255 * clamp(c.g, 0.0f, 1.0f));
-            pixels[idx+2] = (uint8_t)(255 * clamp(c.b, 0.0f, 1.0f));
-        }
-    }
-
-    stbi_write_png(filename, width, height, 3, pixels.data(), width * 3);
-}
-
-vec3 getPlanePoint(float a, float b, float c, float d)
-{
-    vec3 point;
-    if (c != 0)
-        point = vec3(0, 0, -d / c);
-    else if (b != 0)
-        point = vec3(0, -d / b, 0);
-    else if (a != 0)
-        point = vec3(-d / a, 0, 0);
-    
-    return point;
-}
-
-void ProcessFile(FILE* file, Scene& scene, RayCamera& camera)
-{
-    string line;
-    char t;
-    float v1,v2,v3,v4;
-    float distToScreen;
-    float screenHeight;
-    vector<Light*> sceneLights;
-    vector<SceneObject*> sceneObjects;
-    vector<SpotLight*> spots;
-    int spotLightIndex = 0;
-    int objectIndex = 0;
-    int lightIntensityIndex = 0;
-    while (fscanf(file," %c %f %f %f %f",&t,&v1,&v2,&v3,&v4) == 5)
-    {
-        switch (t)
-        {
-            case 'e':
-                //camera position coordinates
-                {
-                    camera.pos = vec3(v1,v2,v3);
-                    distToScreen = v4;
-                    break;
-                }
-            case 'u':
-                {
-                    camera.up = vec3(v1, v2, v3);
-                    screenHeight = v4;
-                    camera.aspect = 1.0;
-                    float fov = degrees(2 * atan(screenHeight / 2 / distToScreen));
-                    camera.fov = fov;
-                    break;
-                }
-
-            case 'f':
-                camera.direction = vec3(v1, v2, v3);
-                break;
-            case 'a':
-                {
-                    GlobalLight ambient;
-                    ambient.color = vec3(v1,v2,v3);
-                    ambient.intensity = 1.0;
-                    scene.ambient = ambient;
-                    break;
-                }
-                
-            case 'd':
-                {
-                if (v4==0.0)
-                {
-                    //directional light
-                    DirectionalLight* dir = new DirectionalLight();
-                    dir->direction = vec3(v1,v2,v3);
-                    sceneLights.push_back(dir);
-                    break;
-                }
-                else
-                {
-                    //spot light
-                    SpotLight* spot = new SpotLight();
-                    spot->direction = vec3(v1,v2,v3);
-                    sceneLights.push_back(spot);
-                    spots.push_back(spot);
-                    break;
-                    
-                    
-                }
-                }
-            case 'p':
-                {
-                    spots.at(spotLightIndex)->position = vec3(v1,v2,v3);
-                    spots.at(spotLightIndex)->cutoff= v4; 
-                    spotLightIndex++;
-                    break;
-                }
-            case 'i':
-                {
-
-                sceneLights.at(lightIntensityIndex)->color = vec3(v1,v2,v3);
-                sceneLights.at(lightIntensityIndex)->intensity = 1.0;
-                lightIntensityIndex++;
-                break;
-                }
-
-            case 'o':
-                //opaque object
-                if (v4>0)
-                {
-                    //sphere
-                    Sphere* sp = new Sphere();
-                    sp->center =  vec3(v1,v2,v3);
-                    sp->radius = v4;
-                    sceneObjects.push_back(sp);
-                    sp->material.alpha = 1.0;
-                    break;
-                }
-                else
-                {
-                    //plane
-                    Plane* p = new Plane();
-                    p->normal = normalize(vec3(v1,v2,v3));
-                    p->position = getPlanePoint(v1,v2,v3,v4);
-                    sceneObjects.push_back(p);
-                    p->material.alpha = 1.0;
-                    break;
-                }
-            case 'r':
-                //reflective object, not yet implemented
-                if (v4>0)
-                {
-                    //sphere
-                    Sphere* sp = new Sphere();
-                    sp->center =  vec3(v1,v2,v3);
-                    sp->radius = v4;
-                    sceneObjects.push_back(sp);
-                    sp->material.alpha = 1.0;
-                    sp->material.reflective = 1.0;
-                    break;
-                }
-                else
-                {
-                    //plane
-                    Plane* p = new Plane();
-                    p->normal = normalize(vec3(v1,v2,v3));
-                    p->position = getPlanePoint(v1,v2,v3,v4);
-                    sceneObjects.push_back(p);
-                    p->material.alpha = 1.0;
-                    p->material.reflective = 1.0;
-                    break;
-                }
-            case 't':
-                //transparent object
-                {
-
-                
-                if (v4>0)
-                {
-                    //sphere
-                    Sphere* sp = new Sphere();
-                    sp->center =  vec3(v1,v2,v3);
-                    sp->radius = v4;
-                    sceneObjects.push_back(sp);
-                    sp->material.alpha = 0.3;
-                    sp->material.reflective = 1.0;
-                    break;
-                }
-                else
-                {
-                    //plane
-                    Plane* p = new Plane();
-                    p->normal = normalize(vec3(v1,v2,v3));
-                    p->position = getPlanePoint(v1,v2,v3,v4);
-                    sceneObjects.push_back(p);
-                    p->material.alpha = 0.3;
-                    p->material.reflective = 1.0;
-                    break;
-                }
-                }
-            case 'c':
-                {
-                
-                sceneObjects.at(objectIndex)->material.ambient = vec3(v1,v2,v3);
-                sceneObjects.at(objectIndex)->material.diffuse = vec3(v1,v2,v3);
-                sceneObjects.at(objectIndex)->material.specular = vec3(0.7,0.7,0.7);
-                sceneObjects.at(objectIndex)->material.shine = v4;
-                objectIndex++;
-                break;
-                }
-            default:
-            
-            break;
-        }
-
-    }
-    for (SceneObject* obj: sceneObjects)
-    {
-        if (Sphere* s = dynamic_cast<Sphere*>(obj)) {
-        scene.spheres.push_back(*s);
-        }
-        else if (Plane* p = dynamic_cast<Plane*>(obj)) {
-        scene.planes.push_back(*p);
-    }
-    }
-    for (Light* light: sceneLights)
-    {
-        if (DirectionalLight* l= dynamic_cast<DirectionalLight*>(light))
-        {
-            scene.dirLights.push_back(*l);
-        }
-        else if (SpotLight* s = dynamic_cast<SpotLight*>(light))
-        {
-            scene.spots.push_back(*s);
-        }
-    }
-}
 int main(int argc, char* argv[])
 {
+    GLFWwindow* window;
+
+    /* Initialize the library */
+    if (!glfwInit())
+    {
+        return -1;
+    }
     
-    int height = 1000;
-    int width = 1000;
-   
-    for (int i=1;i<=6;i++)
+    /* Set OpenGL to Version 3.3.0 */
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    /* Create a windowed mode window and its OpenGL context */
+    window = glfwCreateWindow(width, height, "OpenGL", NULL, NULL);
+    if (!window)
     {
-        Scene scene;
-        RayCamera camera;
-        vector<vec3> framebuffer(height*width);
-        char filename[20];
-        snprintf(filename, sizeof(filename), "./input/scene%d.txt", i);
-        std::cout<<"started rendering scene: "<<i<<endl;
-        FILE* file = fopen(filename, "r");
-        ProcessFile(file,scene,camera);
-        
-        #pragma omp parallel for collapse(2)
-        for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x)
-            {
-
-                float u = (x + 0.5f) / width;
-                float v = (y + 0.5f) / height;
-
-                Ray ray = camera.get_ray(u, v);
-                vec3 color = raytrace(ray, 0, scene);
-
-                framebuffer[y * width + x] = color;
-            }
-        }
-        char outname[20];
-        snprintf(outname, sizeof(outname), "./output/scene%d.png", i);
-        std::cout<<"finished rendering scene: "<<i<<endl;
-        write_png(outname,1000,1000,framebuffer);
-        fclose(file);
-        
-
+        glfwTerminate();
+        return -1;
     }
-    for (int i=2;i<=5;i++)
+
+    /* Make the window's context current */
+    glfwMakeContextCurrent(window);
+
+    /* Load GLAD so it configures OpenGL */
+    gladLoadGL();
+
+    /* Control frame rate */
+    glfwSwapInterval(1);
+
+    /* Print OpenGL version after completing initialization */
+    std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
+    
+    /* Set scope so that on widow close the destructors will be called automatically */
     {
-        Scene scene;
-        RayCamera camera;
-        vector<vec3> framebuffer(height*width);
+        /* Blend to fix images with transperancy */
+        GLCall(glEnable(GL_BLEND));
+        GLCall(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+
+        /* Generate VAO, VBO, EBO and bind them */
         
-        char filename[30];
-        snprintf(filename, sizeof(filename), "./input/scene%d1.txt", i);
-        std::cout<<"started rendering scene: "<<i<<"_1"<<endl;
-        FILE* file = fopen(filename, "r");
-        ProcessFile(file,scene,camera);
+        VertexArray va;
+        VertexBuffer vb(vertices, sizeof(vertices));
+        IndexBuffer ib(indices, sizeof(indices));
+
+        VertexBufferLayout layout;
+        layout.Push<float>(3);  // positions
+        layout.Push<float>(3);  // colors
+        layout.Push<float>(2);  // texCoords
+        va.AddBuffer(vb, layout);
+
+        /* Create texture */
+        Texture texture("res/textures/plane.png");
+        texture.Bind();
+         
+        /* Create shaders */
+        Shader shader("res/shaders/basic.shader");
+        shader.Bind();
+
+        /* Unbind all to prevent accidentally modifying them */
+        va.Unbind();
+        vb.Unbind();
+        ib.Unbind();
+        shader.Unbind();
         
-        #pragma omp parallel for collapse(2)
-        for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x)
-            {
+        /* Enables the Depth Buffer */
+    	GLCall(glEnable(GL_DEPTH_TEST));
 
-                float u = (x + 0.5f) / width;
-                float v = (y + 0.5f) / height;
-
-                Ray ray = camera.get_ray(u, v);
-                glm::vec3 color = raytrace(ray, 0, scene);
-
-                framebuffer[y * width + x] = color;
-            }
-        }
-        char outname[30];
-        snprintf(outname, sizeof(outname), "./output/scene%d_1.png", i);
-        std::cout<<"finished rendering scene: "<<i<<"_1"<<endl;
-        write_png(outname,1000,1000,framebuffer);
-        fclose(file);
-        
-
-    }
-    //fftw scene
-    //change checkerboard scale
-    checkerboardScale = 0.5f;
-    calcDepth = 10;
-    height = 2000;
-    width = 2000;
-    Scene scene;
-    RayCamera camera;
-    vector<vec3> framebuffer(height * width);
-    char filename[30];
-    snprintf(filename, sizeof(filename), "./input/ft.txt");
-    std::cout << "started rendering scene: ft" << endl;
-    FILE *file = fopen(filename, "r");
-    ProcessFile(file, scene, camera);
-    double *in = fftw_alloc_real(width * height);
-    fftw_complex *out = fftw_alloc_complex(width * (height / 2 + 1));
-    fftw_plan p;
-    std::cout << "allocated fftw stuff" << endl;
-#pragma omp parallel for collapse(2)
-    for (int y = 0; y < height; ++y)
-    {
-        for (int x = 0; x < width; ++x)
+        /* Create camera */
+        Camera camera(width, height);
+        //camera.SetOrthographic(near, far);
+        camera.SetPosition(vec3(0,0,6));
+        camera.SetPerspective(near,far);
+        //vector<Cube> cubes;
+        for (int x = -1; x <= 1; x++)
+        for (int y = -1; y <= 1; y++)
+        for (int z = -1; z <= 1; z++)
         {
-
-            float u = (x + 0.5f) / width;
-            float v = (y + 0.5f) / height;
-
-            Ray ray = camera.get_ray(u, v);
-            glm::vec3 color = raytrace(ray, 0, scene);
-
-            framebuffer[y * width + x] = color;
-            double gray = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
-            in[y * width + x] = gray;
+            Cube c(vec3(x, y, z));
+            camera.cubes.push_back(c);
         }
-    }
-    std::cout << "executing plan " << endl;
-    p = fftw_plan_dft_r2c_2d(height, width, in, out, FFTW_ESTIMATE );
-    fftw_execute(p);
-    std::cout << "plan executed, calcutating max frequency " << endl;
-
-    
-
-
-    //calculating max magnitude of FFT
-    double maxMag = 0.0;
-    vec2 loc;
-    for (int v = 0; v < (height/2+1); v++) {
-        for (int u = 0; u < (width / 2 + 1); u++) {
-            // Skip DC component (0,0)
-            if (u == 0 && v == 0) continue;
-            
-            fftw_complex& c = out[v * (width / 2 + 1) + u];
-            double mag = sqrt(c[0] * c[0] + c[1] * c[1]);
-            if(mag>maxMag)
-            {
-                maxMag = mag;
-                loc = vec2(u,v);
-            }
-            
-        }
-    }
-    //debug image
-    vector<vec3> debug(height * width);
-    for (int v = 0; v < height; v++) {
-        for (int u = 0; u < (width / 2 + 1); u++) {
-            
-            fftw_complex& c = out[v * (width / 2 + 1) + u];
-            double mag = sqrt(c[0] * c[0] + c[1] * c[1]);
-            double logMag = log(1.0 + mag);
-            double logMax = log(1.0 + maxMag);
-            float scaled =logMag/logMax;
-            debug[v * width + u] = vec3(scaled,scaled,scaled);
-            //debug[v * (width+1) -u] = vec3(scaled,scaled,scaled);
-        }
-    }
-    write_png("./output/FT_BEFORE.png", width, height, debug);
-
-
-     FILE *ft = fopen("./output/ft.txt", "w");
-    std::cout << "Maximum FFT magnitude: " << maxMag << std::endl;
-    fprintf(ft, "Max magnitude: %f ",maxMag);
-    fprintf(ft, "located at: %f %f \n",loc.x, loc.y);
-    double threshold = maxMag * 0.01;
-    
-    vec2 loc2;
-    double maxFreq = 0.0;
-    
-    int countAboveThreshold = 0;
-    //calculating the frequency (above 0.5 -> needs better sampling, below -> can reduce sampling)
-    for (int v = 0; v < (height/2+1); v++) {
-        for (int u = 0; u < (width / 2 + 1); u++) {
-            fftw_complex& c = out[v * (width / 2 + 1) + u];
-            double mag = sqrt(c[0] * c[0] + c[1] * c[1]);
-            
-            if (mag < threshold) continue;
-            
-            countAboveThreshold++;
-            
-            // Normalized frequency components
-            double fx = (double)u / width;
-            double fy = (v <= height / 2) ? (double)v / height 
-                                          : (double)(v - height) / height;
-            
-            // Radial frequency (Euclidean distance from DC)
-            double freq = sqrt(fx * fx + fy * fy);
-            
-            if (freq > maxFreq) {
-                maxFreq = freq;
-                loc2 = vec2(u,v);
-            }
-        }
-    }
-    
-
-   
-    fprintf(ft, "Frequencies above treshold: %d\n",countAboveThreshold);
-    fprintf(ft, "Max frequency: %f", maxFreq);
-    fprintf(ft, "located at: %f %f \n",loc2.x, loc2.y);
-
-    char outname[30];
-    snprintf(outname, sizeof(outname), "./output/ft.png");
-    std::cout << "finished rendering scene: ft" << endl;
-    write_png(outname, width, height, framebuffer);
-
-    //rerender using new data
-    
-    int dim = round(glm::max(loc.x,loc.y)*2);//nyquist - needed 2x samples
-
-    if (loc.x == loc.y)
-    {
-        width = dim;
-        height = dim;
-    }
-    else
-    {
-        width = (int)(maxFreq / 0.5f * width);
-        height = (int)(maxFreq / 0.5f * height);
-    }
-
-    vector<vec3> framebuffer_up(height * width);
-    
-
-    std::cout << "started rendering updated scene" << endl;
-
-
-    double *in2 = fftw_alloc_real(width * height);
-    fftw_complex *out2 = fftw_alloc_complex(width * (height / 2 + 1));
-    
-#pragma omp parallel for collapse(2)
-    for (int y = 0; y < height; ++y)
-    {
-        for (int x = 0; x < width; ++x)
+        camera.EnableInputs(window);
+        float angle = 0.0f;
+        /* Loop until the user closes the window */
+        while (!glfwWindowShouldClose(window))
         {
+            /* Set white background color */
+            GLCall(glClearColor(0.5f, 0.5f, 0.5f, 1.0f));
 
-            float u = (x + 0.5f) / width;
-            float v = (y + 0.5f) / height;
+            /* Render here */
+            GLCall(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
 
-            Ray ray = camera.get_ray(u, v);
-            glm::vec3 color = raytrace(ray, 0, scene);
-
-            framebuffer_up[y * width + x] = color;
-            double gray = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
-            in2[y * width + x] = gray;
-        }
-    }
-    
-    std::cout << "executing plan " << endl;
-    p = fftw_plan_dft_r2c_2d(height, width, in2, out2, FFTW_ESTIMATE);
-    fftw_execute(p);
-    std::cout << "plan executed, calcutating max frequency " << endl;
-    //calculating max magnitude of FFT
-    maxMag = 0.0;
-    
-    for (int v = 0; v < (height/2+1); v++) {
-        for (int u = 0; u < (width / 2 + 1); u++) {
-            // Skip DC component (0,0)
-            if (u == 0 && v == 0) continue;
-            
-            fftw_complex& c = out2[v * (width / 2 + 1) + u];
-            double mag = sqrt(c[0] * c[0] + c[1] * c[1]);
-            if(mag>maxMag)
+            /* Initialize uniform color */
+            glm::vec4 color = glm::vec4(1.0, 1.0f, 1.0f, 1.0f);
+            for (Cube cube:camera.cubes)
             {
-                maxMag = mag;
-                loc = vec2(u,v);
+
+            
+             /* Initialize the model Translate, Rotate and Scale matrices */
+            glm::mat4 trans = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+            trans = translate(trans,cube.pos);
+            glm::mat4 rot = glm::rotate(glm::mat4(1.0f), 0.0f, glm::vec3(1.0f));
+            
+            glm::mat4 scl = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
+
+            
+           
+            static float lastTime = 0.0f;
+            float currentTime = glfwGetTime();
+            float deltaTime = currentTime - lastTime;
+            lastTime = currentTime;
+            angle += deltaTime * glm::radians(60.0f); // 60° per second
+            
+            mat4 rot2 = glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0.0f, 1.0f, 0.0f));
+            rot2 = glm::rotate(rot2, angle*0.3f, glm::vec3(1.0f, 0.0f, 0.0f));
+            /* Initialize the MVP matrices */ 
+            
+            glm::mat4 model = rot2*cube.rot* trans * rot * scl;
+            glm::mat4 view = camera.GetViewMatrix();
+            glm::mat4 proj = camera.GetProjectionMatrix();
+          
+
+            glm::mat4 mvp = proj * view  * model;
+            //glm::mat4 mvp = proj * view * model;
+
+            /* Update shaders paramters and draw to the screen */
+            shader.Bind();
+            shader.SetUniform4f("u_Color", color);
+            shader.SetUniformMat4f("u_MVP", mvp);
+            shader.SetUniform1i("u_Texture", 0);
+            va.Bind();
+            ib.Bind();
+            GLCall(glDrawElements(GL_TRIANGLES, ib.GetCount(), GL_UNSIGNED_INT, nullptr));
             }
-            
+            /* Swap front and back buffers */
+            glfwSwapBuffers(window);
+
+            /* Poll for and process events */
+            glfwPollEvents();
         }
     }
 
-    //debug image
-    vector<vec3> debug2(height * width);
-    for (int v = 0; v < height; v++) {
-        for (int u = 0; u < (width / 2 + 1); u++) {
-            // Skip DC component (0,0)
-            fftw_complex& c = out2[v * (width / 2 + 1) + u];
-            double mag = sqrt(c[0] * c[0] + c[1] * c[1]);
-            double logMag = log(1.0 + mag);
-            double logMax = log(1.0 + maxMag);
-            float scaled =logMag/logMax;
-            debug2[v * width + u] = vec3(scaled,scaled,scaled);
-            //debug2[v * (width+1) -u] = vec3(scaled,scaled,scaled);
-        }
-    }
-    write_png("./output/FT_AFTER.png", width, height, debug2);
-    fprintf(ft, "\n\nUPDATED FILE\n\n");
-    std::cout << "Maximum FFT magnitude: " << maxMag << std::endl;
-    fprintf(ft, "Max magnitude: %f ",maxMag);
-    fprintf(ft, "located at: %f %f \n",loc.x, loc.y);
-    threshold = maxMag * 0.01;
-    
-    
-    maxFreq = 0.0;
-    
-    countAboveThreshold = 0;
-    //calculating the frequency (above 0.5 -> needs better sampling, below -> can reduce sampling)
-    for (int v = 0; v < (height/2+1); v++) {
-        for (int u = 0; u < (width / 2 + 1); u++) {
-            fftw_complex& c = out2[v * (width / 2 + 1) + u];
-            double mag = sqrt(c[0] * c[0] + c[1] * c[1]);
-            
-            if (mag < threshold) continue;
-            
-            countAboveThreshold++;
-            
-            // Normalized frequency components
-            double fx = (double)u / width;
-            double fy = (v <= height / 2) ? (double)v / height 
-                                          : (double)(v - height) / height;
-            
-            // Radial frequency (Euclidean distance from DC)
-            double freq = sqrt(fx * fx + fy * fy);
-            
-            if (freq > maxFreq) {
-                maxFreq = freq;
-                loc2 = vec2(u,v);
-            }
-        }
-    }
-    fprintf(ft, "Frequencies above treshold: %d\n",countAboveThreshold);
-    fprintf(ft, "Max frequency: %f", maxFreq);
-    fprintf(ft, "located at: %f %f \n",loc2.x, loc2.y);
-
-    snprintf(outname, sizeof(outname), "./output/updated_ft.png");
-    std::cout << "finished rendering updated scene" << endl;
-    write_png(outname, width, height, framebuffer_up);
-    fclose(file);
-    fftw_destroy_plan(p);
-    fftw_free(in);
-    fftw_free(out);
-    fclose(file);
-    fclose(ft);
-   
-
-
+    glfwTerminate();
     return 0;
 }

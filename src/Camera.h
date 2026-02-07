@@ -9,10 +9,16 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/rotate_vector.hpp>
 #include <glm/gtx/vector_angle.hpp>
-
+//#include <main.cpp>
 #include <Debugger.h>
 #include <Shader.h>
-
+#include <vector>
+struct Cube
+{
+    glm::vec3 pos;
+    glm::mat4 rot;
+    Cube (glm::vec3 pos): pos(pos),rot(1.0f){}
+};
 class Camera
 {
     private:
@@ -37,18 +43,24 @@ class Camera
         float m_Bottom = -1.0f; 
         float m_Top = 1.0f;
     public:
+  
         // Prevent the camera from jumping around when first clicking left click
+        std::vector<Cube> cubes;
         double m_OldMouseX = 0.0;
         double m_OldMouseY = 0.0;
         double m_NewMouseX = 0.0;
         double m_NewMouseY = 0.0;
+        int clockwise = -1;
+        float rotAngle = 90.0f;
+        
     public:
         Camera(int width, int height)
             : m_Width(width), m_Height(height) {};
-
+        
         // Update Projection matrix for Orthographic mode
         void SetOrthographic(float near, float far);
-
+        void SetPerspective(float near, float far);
+        void SetPosition(glm::vec3 pos);
         // Handle camera inputs
         void EnableInputs(GLFWwindow* window);
 

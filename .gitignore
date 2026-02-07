@@ -2,7 +2,7 @@
 bin/*
 !bin/.keep
 
-*.pointnet/*
-*archive/*
-*lidar-od-scripts/*
-*shapenet-core-seg/*
+*/.pointnet/*
+*/archive/*
+*/lidar-od-scripts/*
+*/shapenet-core-seg/*
