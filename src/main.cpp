@@ -153,6 +153,15 @@ int main(int argc, char* argv[])
         for (int z = -1; z <= 1; z++)
         {
             Cube c(vec3(x, y, z));
+            if (x==-1 && y==-1 && z == -1)
+            {
+                c.pickColor = vec4(0.3, 0.3, 0.3, 1.0);
+            }
+            else
+            {
+                c.pickColor = vec4((x+1.0)/2.0, (y+1.0)/2.0, (z+1.0)/2.0, 1.0);
+            }
+            
             camera.cubes.push_back(c);
         }
         camera.EnableInputs(window);
@@ -161,7 +170,7 @@ int main(int argc, char* argv[])
         while (!glfwWindowShouldClose(window))
         {
             /* Set white background color */
-            GLCall(glClearColor(0.5f, 0.5f, 0.5f, 1.0f));
+            GLCall(glClearColor(0.4f, 0.4f, 0.4f, 1.0f));
 
             /* Render here */
             GLCall(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
@@ -202,10 +211,16 @@ int main(int argc, char* argv[])
             /* Update shaders paramters and draw to the screen */
             shader.Bind();
             shader.SetUniform4f("u_Color", color);
+            
             shader.SetUniformMat4f("u_MVP", mvp);
             shader.SetUniform1i("u_Texture", 0);
             va.Bind();
             ib.Bind();
+            shader.SetUniform1i("colorPickMode", camera.colorPickMode);
+            if (camera.colorPickMode)
+            {
+                shader.SetUniform4f("pickingColor", cube.pickColor);     
+            }
             GLCall(glDrawElements(GL_TRIANGLES, ib.GetCount(), GL_UNSIGNED_INT, nullptr));
             }
             /* Swap front and back buffers */

@@ -17,6 +17,7 @@ struct Cube
 {
     glm::vec3 pos;
     glm::mat4 rot;
+    glm::vec4 pickColor;
     Cube (glm::vec3 pos): pos(pos),rot(1.0f){}
 };
 class Camera
@@ -25,7 +26,7 @@ class Camera
         // View and Projection
         glm::mat4 m_View = glm::mat4(1.0f);
         glm::mat4 m_Projection = glm::mat4(1.0f);
-
+        
         // View matrix paramters
         glm::vec3 m_Position = glm::vec3(0.0f, 0.0f, 0.0f);
         glm::vec3 m_Orientation = glm::vec3(0.0f, 0.0f, -1.0f);
@@ -53,6 +54,8 @@ class Camera
         int clockwise = -1;
         float rotAngle = 90.0f;
         
+        bool colorPickMode = false;
+        int pickedCubeId = -1;
     public:
         Camera(int width, int height)
             : m_Width(width), m_Height(height) {};

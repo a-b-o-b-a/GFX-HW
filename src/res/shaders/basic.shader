@@ -28,9 +28,21 @@ in vec2 v_TexCoord;
 uniform vec4 u_Color;
 uniform sampler2D u_Texture;
 
+
+uniform vec4 pickingColor;
+uniform bool colorPickMode;
+
 void main()
 {
-	vec4 texColor = texture(u_Texture, v_TexCoord) * u_Color;
-	// gl_FragColor = texColor * v_Color;  // Deprecated
-	FragColor = texColor * v_Color;
+	if(colorPickMode)
+	{
+		FragColor = pickingColor;
+	}
+	else
+	{
+		vec4 texColor = texture(u_Texture, v_TexCoord) * u_Color;
+		// gl_FragColor = texColor * v_Color;  // Deprecated
+		FragColor = texColor * v_Color;
+	}
+	
 }
